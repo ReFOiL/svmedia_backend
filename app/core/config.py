@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     # AWS S3
     AWS_ACCESS_KEY_ID: str = "minioadmin"
     AWS_SECRET_ACCESS_KEY: str = "minioadmin"
-    AWS_REGION: str = "us-east-1"
     AWS_ENDPOINT_URL: str = "http://localhost:9000"
     S3_BUCKET: str = "svmedia-files"
 

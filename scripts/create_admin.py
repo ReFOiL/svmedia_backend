@@ -4,7 +4,6 @@ sys.path.append(".")  # Добавляем текущую директорию �
 
 from app.database import async_session
 from users.services import create_user, get_user_by_email
-from media.models import MediaFile
 from codes.models import AccessCode
 
 async def create_admin_user(email: str, password: str) -> None:

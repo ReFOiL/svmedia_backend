@@ -102,16 +102,6 @@ mypy .
 pytest
 ```
 
-### Миграции базы данных
-
-```bash
-# Создание новой миграции
-alembic revision --autogenerate -m "описание изменений"
-
-# Применение миграций
-alembic upgrade head
-```
-
 ## Docker
 
 Для запуска в Docker:

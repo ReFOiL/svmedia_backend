@@ -1,7 +1,7 @@
 from typing import List, Sequence
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from app.dependency import get_db
 from users.services import get_current_user
 from users.models import User
@@ -9,7 +9,7 @@ from codes.models import AccessCode
 from codes.schemas import (
     AccessCodeResponse,
     AccessCodeList,
-    AccessCodeUsage
+    FormData
 )
 from codes.services import code_generator
 from media.archive_service import archive_service
@@ -124,20 +124,29 @@ async def get_code_usage(
 @router.post("/{code}/use")
 async def use_code(
     code: str,
+    form_data: FormData,
     db: AsyncSession = Depends(get_db)
 ) -> Response:
     """
     Использует код доступа и возвращает архив с фотографиями.
+    Проверяет соответствие кода смене и отряду.
     """
+    # Ищем код в базе данных
     result = await db.execute(
-        select(AccessCode).where(AccessCode.code == code)
+        select(AccessCode).where(
+            and_(
+                AccessCode.code == code,
+                AccessCode.shift_number == int(form_data.shift),
+                AccessCode.squad_number == int(form_data.group)
+            )
+        )
     )
     access_code = result.scalar_one_or_none()
     
     if not access_code:
         raise HTTPException(
             status_code=404,
-            detail="Код не найден"
+            detail="Код не найден или не соответствует указанной смене/отряду"
         )
     
     if access_code.is_used:
@@ -149,10 +158,8 @@ async def use_code(
     # Обновляем данные использования кода
     access_code.is_used = True
     access_code.used_at = datetime.now(timezone.utc)  # type: ignore
-    # access_code.full_name = usage_data.full_name
-    # access_code.squad_number = usage_data.squad_number
-    # access_code.shift_number = usage_data.shift_number
-    # access_code.usage_data = usage_data.model_dump()
+    access_code.full_name = f"{form_data.name} {form_data.surname}"
+    access_code.usage_data = form_data.model_dump()
     
     await db.commit()
     await db.refresh(access_code)

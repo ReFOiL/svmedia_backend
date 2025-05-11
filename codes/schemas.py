@@ -46,3 +46,11 @@ class AccessCodeUsage(BaseModel):
     full_name: str
     squad_number: int
     shift_number: int
+
+class FormData(BaseModel):
+    name: str
+    surname: str
+    shift: str
+    group: str
+    promocode: str
+    agree: bool
