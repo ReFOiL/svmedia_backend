@@ -16,9 +16,9 @@ def configure_app(application: FastAPI) -> None:
     )
 
     # Подключаем роутеры
-    application.include_router(users_router)
-    application.include_router(codes_router)
-    application.include_router(media_router)
+    application.include_router(users_router, prefix="/api")
+    application.include_router(codes_router, prefix="/api")
+    application.include_router(media_router, prefix="/api")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
