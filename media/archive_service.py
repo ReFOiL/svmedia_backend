@@ -2,7 +2,7 @@ import logging
 from app.core.config import settings
 from aiobotocore.session import get_session  # type: ignore
 from aiobotocore.client import AioBaseClient  # type: ignore
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Literal, Dict
 from contextlib import asynccontextmanager
 from botocore.config import Config  # type: ignore
 
@@ -30,35 +30,53 @@ class ArchiveService:
         ) as client:
             yield client
 
-    async def generate_download_url(self, shift_number: int, squad_number: int) -> str:
+    async def generate_download_urls(self, shift_number: int, squad_number: int) -> Dict[str, str]:
         """
-        Генерирует временную ссылку для скачивания архива
+        Генерирует временные ссылки для скачивания обоих архивов
         :param shift_number: Номер смены
         :param squad_number: Номер отряда
-        :return: Временная ссылка для скачивания
+        :return: Словарь с ссылками на архивы
         """
-        archive_key = f"shifts/{shift_number}_{squad_number}.zip"
+        squad_archive_key = f"shifts/{shift_number}_{squad_number}.zip"
+        total_archive_key = f"shifts/{shift_number}_total.zip"
         
         async with self.get_client() as client:
             try:
-                # Проверяем существование файла
+                # Проверяем существование файлов
                 await client.head_object(
                     Bucket=settings.AWS_BUCKET_NAME,
-                    Key=archive_key
+                    Key=squad_archive_key
+                )
+                await client.head_object(
+                    Bucket=settings.AWS_BUCKET_NAME,
+                    Key=total_archive_key
                 )
                 
-                # Генерируем временную ссылку
-                url = await client.generate_presigned_url(
+                # Генерируем временные ссылки
+                squad_url = await client.generate_presigned_url(
                     'get_object',
                     Params={
                         'Bucket': settings.AWS_BUCKET_NAME,
-                        'Key': archive_key
+                        'Key': squad_archive_key
                     },
                     ExpiresIn=86400  # Ссылка действительна 24 часа
                 )
-                return url
+                
+                total_url = await client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': settings.AWS_BUCKET_NAME,
+                        'Key': total_archive_key
+                    },
+                    ExpiresIn=86400  # Ссылка действительна 24 часа
+                )
+                
+                return {
+                    "squad_archive": squad_url,
+                    "total_archive": total_url
+                }
             except Exception as e:
-                logger.error(f"Error generating download URL for {archive_key}: {str(e)}")
-                raise Exception(f"Архив не найден или произошла ошибка при генерации ссылки: {str(e)}")
+                logger.error(f"Error generating download URLs: {str(e)}")
+                raise Exception(f"Архивы не найдены или произошла ошибка при генерации ссылок: {str(e)}")
 
 archive_service = ArchiveService() 

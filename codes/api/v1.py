@@ -128,7 +128,7 @@ async def use_code(
     db: AsyncSession = Depends(get_db)
 ) -> dict:
     """
-    Использует код доступа и возвращает временную ссылку на архив с фотографиями.
+    Использует код доступа и возвращает временные ссылки на архивы с фотографиями.
     Проверяет соответствие кода смене и отряду.
     """
     # Ищем код в базе данных
@@ -161,15 +161,15 @@ async def use_code(
     access_code.full_name = f"{form_data.name} {form_data.surname}"
     access_code.usage_data = form_data.model_dump()
     
-    # Генерируем временную ссылку на скачивание
+    # Генерируем временные ссылки на скачивание
     try:
-        download_url = await archive_service.generate_download_url(
+        download_urls = await archive_service.generate_download_urls(
             shift_number=access_code.shift_number,
             squad_number=access_code.squad_number
         )
         await db.commit()
         await db.refresh(access_code)
-        return {"download_url": download_url}
+        return download_urls
     except Exception as e:
         raise HTTPException(
             status_code=500,
