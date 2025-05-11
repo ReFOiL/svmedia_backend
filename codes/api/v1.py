@@ -14,8 +14,11 @@ from codes.schemas import (
 from codes.services import code_generator
 from media.archive_service import archive_service
 from datetime import datetime, timezone
+import logging
 
 router = APIRouter(prefix="/codes", tags=["codes"])
+
+logger = logging.getLogger(__name__)
 
 @router.post("/generate", response_model=List[AccessCodeResponse])
 async def generate_codes(
@@ -167,10 +170,12 @@ async def use_code(
             shift_number=access_code.shift_number,
             squad_number=access_code.squad_number
         )
+        logger.info(f"Generated download URLs: {download_urls}")
         await db.commit()
         await db.refresh(access_code)
         return download_urls
     except Exception as e:
+        logger.error(f"Error generating download URLs: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=str(e)
