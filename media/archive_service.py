@@ -1,11 +1,12 @@
-import zipstream
-import asyncio
+import logging
 from app.core.config import settings
-from aiobotocore.session import get_session
-from aiobotocore.client import AioBaseClient
+from aiobotocore.session import get_session  # type: ignore
+from aiobotocore.client import AioBaseClient  # type: ignore
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
+from botocore.config import Config  # type: ignore
 
+logger = logging.getLogger(__name__)
 
 class ArchiveService:
     def __init__(self) -> None:
@@ -13,71 +14,51 @@ class ArchiveService:
 
     @asynccontextmanager
     async def get_client(self) -> AsyncGenerator[AioBaseClient, None]:
+        config = Config(
+            s3={'addressing_style': 'path'},
+            signature_version='s3v4'
+        )
+        
         async with self.session.create_client(
             's3',
             endpoint_url=settings.AWS_ENDPOINT_URL,
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            verify=False  # Отключаем проверку SSL для Selectel
+            region_name='ru-7',
+            verify=False,
+            config=config
         ) as client:
             yield client
 
-    async def _s3_stream_for_key(self, key, chunk_size=1024*1024):
+    async def generate_download_url(self, shift_number: int, squad_number: int) -> str:
+        """
+        Генерирует временную ссылку для скачивания архива
+        :param shift_number: Номер смены
+        :param squad_number: Номер отряда
+        :return: Временная ссылка для скачивания
+        """
+        archive_key = f"shifts/{shift_number}_{squad_number}.zip"
+        
         async with self.get_client() as client:
-            response = await client.get_object(
-                Bucket=settings.S3_BUCKET,
-                Key=key
-            )
-            stream = response['Body']
-            while True:
-                chunk = await stream.read(chunk_size)
-                if not chunk:
-                    break
-                yield chunk
-
-    def async_to_sync_iter(self, async_gen):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        agen = async_gen.__aiter__()
-        try:
-            while True:
-                try:
-                    chunk = loop.run_until_complete(agen.__anext__())
-                    yield chunk
-                except StopAsyncIteration:
-                    break
-        finally:
-            loop.close()
-
-    async def stream_squad_archive(self, shift_number: int, squad_number: int):
-        z = zipstream.ZipStream()
-        # Файлы отряда
-        squad_prefix = f"{shift_number}/{squad_number}/"
-        async with self.get_client() as client:
-            squad_objects = await client.list_objects(
-                Bucket=settings.S3_BUCKET,
-                Prefix=squad_prefix
-            )
-            for obj in squad_objects.get('Contents', []):
-                if obj['Key'].endswith('/'):
-                    continue
-                file_name = obj['Key'].split('/')[-1]
-                arcname = f"Отряд {squad_number}/{file_name}"
-                z.add(arcname=arcname, data=self.async_to_sync_iter(self._s3_stream_for_key(obj['Key'])))
-        # Общие файлы смены
-        total_prefix = f"{shift_number}/total/"
-        async with self.get_client() as client:
-            total_objects = await client.list_objects(
-                Bucket=settings.S3_BUCKET,
-                Prefix=total_prefix
-            )
-            for obj in total_objects.get('Contents', []):
-                if obj['Key'].endswith('/'):
-                    continue
-                file_name = obj['Key'].split('/')[-1]
-                arcname = f"Общие фото/{file_name}"
-                z.add(arcname=arcname, data=self.async_to_sync_iter(self._s3_stream_for_key(obj['Key'])))
-        archive_name = f"shift_{shift_number}_squad_{squad_number}.zip"
-        return z, archive_name
+            try:
+                # Проверяем существование файла
+                await client.head_object(
+                    Bucket=settings.AWS_BUCKET_NAME,
+                    Key=archive_key
+                )
+                
+                # Генерируем временную ссылку
+                url = await client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': settings.AWS_BUCKET_NAME,
+                        'Key': archive_key
+                    },
+                    ExpiresIn=86400  # Ссылка действительна 24 часа
+                )
+                return url
+            except Exception as e:
+                logger.error(f"Error generating download URL for {archive_key}: {str(e)}")
+                raise Exception(f"Архив не найден или произошла ошибка при генерации ссылки: {str(e)}")
 
 archive_service = ArchiveService() 

@@ -1,9 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 from app.core.config import settings
 from users.api.v1 import router as users_router
 from codes.api.v1 import router as codes_router
 from media.api.v1 import router as media_router
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 def configure_app(application: FastAPI) -> None:
     # Настройка CORS

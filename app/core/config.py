@@ -26,15 +26,11 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "svmedia"
     DATABASE_URL: str = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:5432/{POSTGRES_DB}"
 
-    # MinIO
-    MINIO_ROOT_USER: str = "minioadmin"
-    MINIO_ROOT_PASSWORD: str = "minioadmin"
-
     # AWS S3
     AWS_ACCESS_KEY_ID: str = "minioadmin"
     AWS_SECRET_ACCESS_KEY: str = "minioadmin"
+    AWS_BUCKET_NAME: str = "svmedia-s3"
     AWS_ENDPOINT_URL: str = "http://localhost:9000"
-    S3_BUCKET: str = "svmedia-files"
 
     # JWT
     SECRET_KEY: str = "your-secret-key-here"

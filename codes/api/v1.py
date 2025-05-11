@@ -14,7 +14,6 @@ from codes.schemas import (
 from codes.services import code_generator
 from media.archive_service import archive_service
 from datetime import datetime, timezone
-from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/codes", tags=["codes"])
 
@@ -127,9 +126,9 @@ async def use_code(
     code: str,
     form_data: FormData,
     db: AsyncSession = Depends(get_db)
-) -> StreamingResponse:
+) -> dict:
     """
-    Использует код доступа и возвращает архив с фотографиями.
+    Использует код доступа и возвращает временную ссылку на архив с фотографиями.
     Проверяет соответствие кода смене и отряду.
     """
     # Ищем код в базе данных
@@ -162,18 +161,17 @@ async def use_code(
     access_code.full_name = f"{form_data.name} {form_data.surname}"
     access_code.usage_data = form_data.model_dump()
     
-    await db.commit()
-    await db.refresh(access_code)
-    
-    # Стримим архив
-    z, archive_name = await archive_service.stream_squad_archive(
-        shift_number=access_code.shift_number,
-        squad_number=access_code.squad_number
-    )
-    return StreamingResponse(
-        z,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename={archive_name}"
-        }
-    ) 
+    # Генерируем временную ссылку на скачивание
+    try:
+        download_url = await archive_service.generate_download_url(
+            shift_number=access_code.shift_number,
+            squad_number=access_code.squad_number
+        )
+        await db.commit()
+        await db.refresh(access_code)
+        return {"download_url": download_url}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
