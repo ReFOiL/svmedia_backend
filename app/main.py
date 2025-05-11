@@ -23,7 +23,9 @@ def configure_app(application: FastAPI) -> None:
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API SVMedia",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json"
 )
 
 configure_app(app)
