@@ -1,5 +1,6 @@
 from typing import List, Sequence
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from app.dependency import get_db
@@ -173,7 +174,64 @@ async def use_code(
         logger.info(f"Generated download URLs: {download_urls}")
         await db.commit()
         await db.refresh(access_code)
-        return download_urls
+        
+        # Создаем HTML страницу для автоматического скачивания
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Скачивание архивов</title>
+            <meta charset="utf-8">
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    text-align: center;
+                    padding: 20px;
+                }}
+                .message {{
+                    margin: 20px 0;
+                    padding: 10px;
+                    border-radius: 5px;
+                }}
+                .success {{
+                    background-color: #d4edda;
+                    color: #155724;
+                }}
+                .error {{
+                    background-color: #f8d7da;
+                    color: #721c24;
+                }}
+            </style>
+        </head>
+        <body>
+            <h1>Скачивание архивов</h1>
+            <div class="message success">
+                Начинаем скачивание архивов...
+            </div>
+            <script>
+                // Функция для скачивания файла
+                function downloadFile(url, filename) {{
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }}
+
+                // Скачиваем оба архива
+                window.onload = function() {{
+                    downloadFile('{download_urls["squad_archive"]}', 'archive_squad.zip');
+                    setTimeout(() => {{
+                        downloadFile('{download_urls["total_archive"]}', 'archive_total.zip');
+                    }}, 1000);
+                }};
+            </script>
+        </body>
+        </html>
+        """
+        
+        return HTMLResponse(content=html_content)
     except Exception as e:
         logger.error(f"Error generating download URLs: {str(e)}")
         raise HTTPException(
