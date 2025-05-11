@@ -14,6 +14,7 @@ from codes.schemas import (
 from codes.services import code_generator
 from media.archive_service import archive_service
 from datetime import datetime, timezone
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/codes", tags=["codes"])
 
@@ -126,7 +127,7 @@ async def use_code(
     code: str,
     form_data: FormData,
     db: AsyncSession = Depends(get_db)
-) -> Response:
+) -> StreamingResponse:
     """
     Использует код доступа и возвращает архив с фотографиями.
     Проверяет соответствие кода смене и отряду.
@@ -164,14 +165,13 @@ async def use_code(
     await db.commit()
     await db.refresh(access_code)
     
-    # Создаем архив с фотографиями
-    archive_content, archive_name = await archive_service.create_squad_archive(
+    # Стримим архив
+    z, archive_name = await archive_service.stream_squad_archive(
         shift_number=access_code.shift_number,
         squad_number=access_code.squad_number
     )
-    
-    return Response(
-        content=archive_content,
+    return StreamingResponse(
+        z,
         media_type="application/zip",
         headers={
             "Content-Disposition": f"attachment; filename={archive_name}"

@@ -1,5 +1,5 @@
-import io
-import zipfile
+import zipstream
+import asyncio
 from app.core.config import settings
 from aiobotocore.session import get_session
 from aiobotocore.client import AioBaseClient
@@ -22,71 +22,62 @@ class ArchiveService:
         ) as client:
             yield client
 
-    async def create_squad_archive(self, shift_number: int, squad_number: int) -> tuple[bytes, str]:
-        """
-        Создает ZIP-архив с фотографиями отряда и общими фотографиями смены
-        
-        Args:
-            shift_number: номер смены
-            squad_number: номер отряда
-            
-        Returns:
-            tuple[bytes, str]: (содержимое архива, имя файла)
-        """
-        # Создаем ZIP-архив в памяти
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # Получаем файлы из папки отряда
-            squad_prefix = f"{shift_number}/{squad_number}/"
-            print(f'<<< {settings.AWS_ENDPOINT_URL}, {settings.AWS_ACCESS_KEY_ID}, {settings.AWS_SECRET_ACCESS_KEY}')
-            async with self.get_client() as client:
-                squad_objects = await client.list_objects(
-                    Bucket=settings.S3_BUCKET,
-                    Prefix=squad_prefix
-                )
-            
+    async def _s3_stream_for_key(self, key, chunk_size=1024*1024):
+        async with self.get_client() as client:
+            response = await client.get_object(
+                Bucket=settings.S3_BUCKET,
+                Key=key
+            )
+            stream = response['Body']
+            while True:
+                chunk = await stream.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+    def async_to_sync_iter(self, async_gen):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        agen = async_gen.__aiter__()
+        try:
+            while True:
+                try:
+                    chunk = loop.run_until_complete(agen.__anext__())
+                    yield chunk
+                except StopAsyncIteration:
+                    break
+        finally:
+            loop.close()
+
+    async def stream_squad_archive(self, shift_number: int, squad_number: int):
+        z = zipstream.ZipStream()
+        # Файлы отряда
+        squad_prefix = f"{shift_number}/{squad_number}/"
+        async with self.get_client() as client:
+            squad_objects = await client.list_objects(
+                Bucket=settings.S3_BUCKET,
+                Prefix=squad_prefix
+            )
             for obj in squad_objects.get('Contents', []):
-                if obj['Key'].endswith('/'):  # Пропускаем папки
+                if obj['Key'].endswith('/'):
                     continue
-                    
-                # Получаем содержимое файла
-                response = await client.get_object(
-                    Bucket=settings.S3_BUCKET,
-                    Key=obj['Key']
-                )
-                file_content = await response['Body'].read()
-                
-                # Добавляем файл в архив
                 file_name = obj['Key'].split('/')[-1]
-                zip_file.writestr(f"Отряд {squad_number}/{file_name}", file_content)
-            
-            # Получаем файлы из общей папки смены
-            total_prefix = f"{shift_number}/total/"
-            async with self.get_client() as client:
-                total_objects = await client.list_objects(
-                    Bucket=settings.S3_BUCKET,
-                    Prefix=total_prefix
-                )
-                
-                for obj in total_objects.get('Contents', []):
-                    if obj['Key'].endswith('/'):  # Пропускаем папки
-                        continue
-                        
-                    # Получаем содержимое файла
-                    response = await client.get_object(
-                        Bucket=settings.S3_BUCKET,
-                        Key=obj['Key']
-                    )
-                    file_content = await response['Body'].read()
-                    
-                    # Добавляем файл в архив
-                    file_name = obj['Key'].split('/')[-1]
-                    zip_file.writestr(f"Общие фото/{file_name}", file_content)
-        
-        # Получаем содержимое архива
-        archive_content = zip_buffer.getvalue()
+                arcname = f"Отряд {squad_number}/{file_name}"
+                z.add(arcname=arcname, data=self.async_to_sync_iter(self._s3_stream_for_key(obj['Key'])))
+        # Общие файлы смены
+        total_prefix = f"{shift_number}/total/"
+        async with self.get_client() as client:
+            total_objects = await client.list_objects(
+                Bucket=settings.S3_BUCKET,
+                Prefix=total_prefix
+            )
+            for obj in total_objects.get('Contents', []):
+                if obj['Key'].endswith('/'):
+                    continue
+                file_name = obj['Key'].split('/')[-1]
+                arcname = f"Общие фото/{file_name}"
+                z.add(arcname=arcname, data=self.async_to_sync_iter(self._s3_stream_for_key(obj['Key'])))
         archive_name = f"shift_{shift_number}_squad_{squad_number}.zip"
-        
-        return archive_content, archive_name
+        return z, archive_name
 
 archive_service = ArchiveService() 
