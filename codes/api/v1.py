@@ -1,8 +1,8 @@
 from typing import List, Sequence
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, not_
 from app.dependency import get_db
 from users.services import get_current_user
 from users.models import User
@@ -293,7 +293,7 @@ async def get_shift_promocodes_print(
     db: AsyncSession = Depends(get_db)
 ) -> str:
     """
-    Получает все промокоды для указанной смены в текстовом формате для печати.
+    Получает все неактивированные промокоды для указанной смены в текстовом формате для печати.
     Только для администраторов.
     """
     if not current_user.is_admin:
@@ -302,16 +302,21 @@ async def get_shift_promocodes_print(
             detail="Только администраторы могут просматривать промокоды"
         )
     
-    # Получаем все промокоды для указанной смены
+    # Получаем все неактивированные промокоды для указанной смены
     result = await db.execute(
         select(AccessCode)
-        .where(AccessCode.shift_number == shift_number)
+        .where(
+            and_(
+                AccessCode.shift_number == shift_number,
+                not_(AccessCode.is_used)
+            )
+        )
         .order_by(AccessCode.squad_number)
     )
     codes = result.scalars().all()
     
     # Группируем промокоды по отрядам
-    squads_dict = {}
+    squads_dict: dict[int, list[AccessCode]] = {}
     for code in codes:
         if code.squad_number not in squads_dict:
             squads_dict[code.squad_number] = []
@@ -319,7 +324,7 @@ async def get_shift_promocodes_print(
     
     # Формируем текстовый ответ
     output = []
-    output.append(f"Смена {shift_number}\n")
+    output.append(f"Смена {shift_number} - Неактивированные промокоды\n")
     output.append("=" * 50 + "\n")
     
     for squad_number in sorted(squads_dict.keys()):
@@ -327,8 +332,7 @@ async def get_shift_promocodes_print(
         output.append("-" * 30)
         
         for code in squads_dict[squad_number]:
-            status = "активирован" if code.is_used else "не активирован"
-            output.append(f"{code.code} - {status}")
+            output.append(f"{code.code}")
         
         output.append("")  # Пустая строка между отрядами
     
