@@ -1,6 +1,6 @@
 from typing import List, Sequence
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from app.dependency import get_db
@@ -10,7 +10,9 @@ from codes.models import AccessCode
 from codes.schemas import (
     AccessCodeResponse,
     AccessCodeList,
-    FormData
+    FormData,
+    ShiftPromocodesResponse,
+    SquadPromocodes
 )
 from codes.services import code_generator
 from media.archive_service import archive_service
@@ -238,3 +240,96 @@ async def use_code(
             status_code=500,
             detail=str(e)
         )
+
+@router.get("/shift/{shift_number}", response_model=ShiftPromocodesResponse)
+async def get_shift_promocodes(
+    shift_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> ShiftPromocodesResponse:
+    """
+    Получает все промокоды для указанной смены, сгруппированные по отрядам.
+    Только для администраторов.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Только администраторы могут просматривать промокоды"
+        )
+    
+    # Получаем все промокоды для указанной смены
+    result = await db.execute(
+        select(AccessCode)
+        .where(AccessCode.shift_number == shift_number)
+        .order_by(AccessCode.squad_number)
+    )
+    codes = result.scalars().all()
+    
+    # Группируем промокоды по отрядам
+    squads_dict = {}
+    for code in codes:
+        if code.squad_number not in squads_dict:
+            squads_dict[code.squad_number] = []
+        squads_dict[code.squad_number].append(code)
+    
+    # Формируем ответ
+    squads = [
+        SquadPromocodes(
+            squad_number=squad_number,
+            promocodes=codes
+        )
+        for squad_number, codes in sorted(squads_dict.items())
+    ]
+    
+    return ShiftPromocodesResponse(
+        shift_number=shift_number,
+        squads=squads
+    )
+
+@router.get("/shift/{shift_number}/print", response_class=PlainTextResponse)
+async def get_shift_promocodes_print(
+    shift_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> str:
+    """
+    Получает все промокоды для указанной смены в текстовом формате для печати.
+    Только для администраторов.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Только администраторы могут просматривать промокоды"
+        )
+    
+    # Получаем все промокоды для указанной смены
+    result = await db.execute(
+        select(AccessCode)
+        .where(AccessCode.shift_number == shift_number)
+        .order_by(AccessCode.squad_number)
+    )
+    codes = result.scalars().all()
+    
+    # Группируем промокоды по отрядам
+    squads_dict = {}
+    for code in codes:
+        if code.squad_number not in squads_dict:
+            squads_dict[code.squad_number] = []
+        squads_dict[code.squad_number].append(code)
+    
+    # Формируем текстовый ответ
+    output = []
+    output.append(f"Смена {shift_number}\n")
+    output.append("=" * 50 + "\n")
+    
+    for squad_number in sorted(squads_dict.keys()):
+        output.append(f"\nОтряд {squad_number}")
+        output.append("-" * 30)
+        
+        for code in squads_dict[squad_number]:
+            status = "активирован" if code.is_used else "не активирован"
+            output.append(f"{code.code} - {status}")
+        
+        output.append("")  # Пустая строка между отрядами
+    
+    return "\n".join(output)

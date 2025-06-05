@@ -54,3 +54,11 @@ class FormData(BaseModel):
     group: str
     promocode: str
     agree: bool
+
+class SquadPromocodes(BaseModel):
+    squad_number: int
+    promocodes: List[AccessCodeResponse]
+
+class ShiftPromocodesResponse(BaseModel):
+    shift_number: int
+    squads: List[SquadPromocodes]
