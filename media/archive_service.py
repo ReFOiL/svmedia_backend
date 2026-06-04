@@ -24,7 +24,7 @@ class ArchiveService:
             endpoint_url=settings.AWS_ENDPOINT_URL,
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name='ru-7',
+            region_name=settings.AWS_REGION,
             verify=False,
             config=config
         ) as client:

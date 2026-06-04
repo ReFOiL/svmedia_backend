@@ -26,11 +26,12 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "svmedia"
     DATABASE_URL: str = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:5432/{POSTGRES_DB}"
 
-    # AWS S3
+    # AWS S3 / Selectel Object Storage
     AWS_ACCESS_KEY_ID: str = "minioadmin"
     AWS_SECRET_ACCESS_KEY: str = "minioadmin"
     AWS_BUCKET_NAME: str = "svmedia-s3"
     AWS_ENDPOINT_URL: str = "http://localhost:9000"
+    AWS_REGION: str = "ru-3"
 
     # JWT
     SECRET_KEY: str = "your-secret-key-here"
