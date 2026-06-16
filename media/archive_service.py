@@ -61,7 +61,11 @@ class ArchiveService:
                     },
                     ExpiresIn=86400  # Ссылка действительна 24 часа
                 )
-                logger.info(f"Generated squad archive URL: {squad_url}")
+                logger.info(
+                    "Generated squad archive URL for shift=%s squad=%s",
+                    shift_number,
+                    squad_number
+                )
                 
                 total_url = await client.generate_presigned_url(
                     'get_object',
@@ -71,16 +75,28 @@ class ArchiveService:
                     },
                     ExpiresIn=86400  # Ссылка действительна 24 часа
                 )
-                logger.info(f"Generated total archive URL: {total_url}")
+                logger.info(
+                    "Generated total archive URL for shift=%s squad=%s",
+                    shift_number,
+                    squad_number
+                )
                 
                 result = {
                     "squad_archive": squad_url,
                     "total_archive": total_url
                 }
-                logger.info(f"Returning URLs: {result}")
+                logger.info(
+                    "Returning signed archive URLs for shift=%s squad=%s",
+                    shift_number,
+                    squad_number
+                )
                 return result
             except Exception as e:
-                logger.error(f"Error generating download URLs: {str(e)}")
-                raise Exception(f"Архивы не найдены или произошла ошибка при генерации ссылок: {str(e)}")
+                logger.exception(
+                    "Error generating download URLs for shift=%s squad=%s",
+                    shift_number,
+                    squad_number
+                )
+                raise Exception("Архивы не найдены или произошла ошибка при генерации ссылок") from e
 
 archive_service = ArchiveService() 

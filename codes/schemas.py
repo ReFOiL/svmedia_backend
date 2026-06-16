@@ -50,8 +50,8 @@ class AccessCodeUsage(BaseModel):
 class FormData(BaseModel):
     name: str
     surname: str
-    shift: str
-    group: str
+    shift: int
+    group: int
     promocode: str
     agree: bool
 

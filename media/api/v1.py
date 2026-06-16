@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.config import settings
 from media.archive_service import archive_service
+from users.models import User
+from users.services import get_current_user
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,10 +10,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/media", tags=["media"])
 
 @router.get("/check-total/{shift_number}")
-async def check_total_folder(shift_number: int):
+async def check_total_folder(
+    shift_number: int,
+    current_user: User = Depends(get_current_user)
+):
     """
     Проверяет содержимое папки total для указанной смены
     """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Только администраторы могут выполнять эту операцию"
+        )
+
     total_prefix = f"{shift_number}/total/"
     async with archive_service.get_client() as client:
         try:
@@ -31,9 +42,9 @@ async def check_total_folder(shift_number: int):
                 'total_files': len(files),
                 'files': files
             }
-        except Exception as e:
-            logger.error(f"Error checking total folder: {str(e)}")
+        except Exception:
+            logger.exception("Error checking total folder")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error checking total folder: {str(e)}"
+                detail="Не удалось проверить папку total"
             )

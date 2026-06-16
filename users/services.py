@@ -11,7 +11,7 @@ from fastapi.security import OAuth2PasswordBearer
 from app.dependency import get_db
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
@@ -38,6 +38,8 @@ async def get_user_by_email(email: str, db: AsyncSession) -> Optional[User]:
 async def authenticate_user(email: str, password: str, db: AsyncSession) -> Optional[User]:
     user = await get_user_by_email(email, db)
     if not user:
+        return None
+    if not user.is_active:
         return None
     if not verify_password(password, user.hashed_password):
         return None
@@ -74,5 +76,7 @@ async def get_current_user(
     
     user = await get_user_by_email(email, db)
     if user is None:
+        raise credentials_exception
+    if not user.is_active:
         raise credentials_exception
     return user 

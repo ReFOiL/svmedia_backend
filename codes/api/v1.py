@@ -2,8 +2,9 @@ from typing import List, Sequence
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, not_
+from sqlalchemy import select, func, and_, not_, update
 from app.dependency import get_db
+from app.core.config import settings
 from users.services import get_current_user
 from users.models import User
 from codes.models import AccessCode
@@ -137,45 +138,90 @@ async def use_code(
     Использует код доступа и возвращает временные ссылки на архивы с фотографиями.
     Проверяет соответствие кода смене и отряду.
     """
-    # Ищем код в базе данных
-    result = await db.execute(
+    if form_data.promocode.strip() != code:
+        raise HTTPException(
+            status_code=400,
+            detail="Промокод в форме не совпадает с промокодом в запросе"
+        )
+
+    if not form_data.agree:
+        raise HTTPException(
+            status_code=400,
+            detail="Необходимо подтвердить согласие с правилами сервиса"
+        )
+
+    existing_code = await db.scalar(
         select(AccessCode).where(
             and_(
                 AccessCode.code == code,
-                AccessCode.shift_number == int(form_data.shift),
-                AccessCode.squad_number == int(form_data.group)
+                AccessCode.shift_number == form_data.shift,
+                AccessCode.squad_number == form_data.group
             )
         )
     )
-    access_code = result.scalar_one_or_none()
-    
-    if not access_code:
+    if not existing_code:
         raise HTTPException(
             status_code=404,
             detail="Код не найден или не соответствует указанной смене/отряду"
         )
-    
-    if access_code.is_used:
+    if existing_code.is_used:
         raise HTTPException(
             status_code=400,
             detail="Этот код уже был использован"
         )
-    
-    # Обновляем данные использования кода
-    access_code.is_used = True
-    access_code.used_at = datetime.now(timezone.utc)  # type: ignore
-    access_code.full_name = f"{form_data.name} {form_data.surname}"
-    access_code.usage_data = form_data.model_dump()
-    
-    # Генерируем временные ссылки на скачивание
+
+    if not settings.DOWNLOADS_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Скачивание временно недоступно: медиафайлы еще загружаются. Попробуйте позже."
+        )
+
+    # Генерируем временные ссылки до списания кода:
+    # если архивы недоступны, код не будет помечен использованным.
     try:
         download_urls = await archive_service.generate_download_urls(
-            shift_number=access_code.shift_number,
-            squad_number=access_code.squad_number
+            shift_number=form_data.shift,
+            squad_number=form_data.group
         )
-        logger.info(f"Generated download URLs: {download_urls}")
+    except Exception:
+        logger.exception("Error generating download URLs")
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось подготовить архивы для скачивания. Попробуйте позже."
+        )
+
+    usage_data = form_data.model_dump()
+    used_at = datetime.now(timezone.utc)
+
+    # Атомарное списание промокода (защита от гонок).
+    result = await db.execute(
+        update(AccessCode)
+        .where(
+            and_(
+                AccessCode.code == code,
+                AccessCode.shift_number == form_data.shift,
+                AccessCode.squad_number == form_data.group,
+                AccessCode.is_used.is_(False)
+            )
+        )
+        .values(
+            is_used=True,
+            used_at=used_at,
+            full_name=f"{form_data.name} {form_data.surname}",
+            usage_data=usage_data
+        )
+        .returning(AccessCode)
+    )
+    access_code = result.scalar_one_or_none()
+
+    if not access_code:
+        raise HTTPException(
+            status_code=400,
+            detail="Этот код уже был использован"
+        )
+
+    try:
         await db.commit()
-        await db.refresh(access_code)
         
         # Создаем HTML страницу для автоматического скачивания
         html_content = f"""
@@ -234,11 +280,12 @@ async def use_code(
         """
         
         return HTMLResponse(content=html_content)
-    except Exception as e:
-        logger.error(f"Error generating download URLs: {str(e)}")
+    except Exception:
+        await db.rollback()
+        logger.exception("Error while finalizing code usage")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Не удалось завершить активацию промокода. Попробуйте позже."
         )
 
 @router.get("/shift/{shift_number}", response_model=ShiftPromocodesResponse)
