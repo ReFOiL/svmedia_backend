@@ -6,10 +6,17 @@ from sqlalchemy import select, insert
 from codes.models import AccessCode
 from users.models import User
 
+# Без символов, которые легко перепутать: 0/O/o, 1/I/i/L/l
+_AMBIGUOUS = set("0Oo1IiLl")
+_SAFE_ALPHABET = "".join(
+    c for c in string.ascii_letters + string.digits if c not in _AMBIGUOUS
+)
+
+
 class CodeGenerator:
     def __init__(self, length: int = 8):
         self.length = length
-        self.alphabet = string.ascii_letters + string.digits
+        self.alphabet = _SAFE_ALPHABET
 
     def generate_code(self) -> str:
         """Generate a single unique code"""
